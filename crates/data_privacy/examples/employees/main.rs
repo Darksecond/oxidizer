@@ -71,7 +71,6 @@ fn main() {
     app_loop();
 }
 
-#[expect(clippy::print_stdout, reason = "this is a demo app, so we print to stdout")]
 fn app_loop() {
     let json_path = "employees.json";
     let mut employees: Vec<Employee> = File::open(json_path).map_or_else(
@@ -92,20 +91,32 @@ fn app_loop() {
 
     employees.push(employee.clone());
 
-    let file = OpenOptions::new().write(true).create(true).truncate(true).open(json_path).unwrap();
-    serde_json::to_writer_pretty(file, &employees).unwrap();
-    println!("Employee added.\n");
+    match OpenOptions::new().write(true).create(true).truncate(true).open(json_path) {
+        Ok(file) => {
+            match serde_json::to_writer_pretty(file, &employees) {
+                Ok(()) => {
+                    // Here we log the employee creation event. Our little logging framework takes as input a set of name/value pairs that provide
+                    // a structured log record.
+                    //
+                    // For each value, you can control which trait is used to format the value into a string:
+                    //   `name` - formats the value with the `Display` trait.
+                    //   `name:?` - formats the value with the `Debug` trait.
+                    //   `name:@` - formats the value with the `Display` trait and redacts it.
+                    log!(event = "Employee created",
+                         name:@ = employee.name,
+                         address:@ = employee.address,
+                         employee_id:@ = employee.id,
+                         age = employee.age);
+                }
 
-    // Here we log the employee creation event. Our little logging framework takes as input a set of name/value pairs that provide
-    // a structured log record.
-    //
-    // For each value, you can control which trait is used to format the value into a string:
-    //   `name` - formats the value with the `Display` trait.
-    //   `name:?` - formats the value with the `Debug` trait.
-    //   `mame:@` - formats the value with the `Display` trait and redacts it.
-    log!(event:? = "Employee created",
-         name:@ = employee.name,
-         address:@ = employee.address,
-         employee_id:@ = employee.id,
-         age = employee.age);
+                Err(e) => {
+                    log!(event = "Employee database write error", error = e);
+                }
+            }
+        }
+
+        Err(e) => {
+            log!(event = "Employee database read error", error = e);
+        }
+    }
 }
